@@ -4,6 +4,30 @@ import pytest
 from pipeline import ValidationError, assign_roles, build_graph, cluster_membership, compute_metrics, load, prioritize, thresholds
 
 
+def test_boundary_consolidator_has_caution_and_capped_support():
+    frame = pd.DataFrame([row(10, depth=4, in_deg=20, in_kzt=1000)])
+    result = classify(frame).iloc[0]
+    assert result.role == 'consolidator' and result.role_score <= 0.65
+    assert 'depth=4' in result.evidence
+
+
+def test_no_positive_betweenness_disables_coordinator():
+    frame = pd.DataFrame([row(10, in_deg=2, in_kzt=1000, seed_neighbors=3)])
+    assert assign_roles(frame, thresholds(frame)).iloc[0].role != 'coordinator'
+
+
+def test_projection_adds_reverse_weights_and_keeps_isolate():
+    import networkx as nx
+    from pipeline import undirected_projection
+    graph = nx.DiGraph()
+    graph.add_nodes_from([1,2,3])
+    graph.add_edge(1,2,sum_kzt=7)
+    graph.add_edge(2,1,sum_kzt=5)
+    projection = undirected_projection(graph)
+    assert projection[1][2]['weight'] == 12
+    assert projection.degree(3) == 0
+
+
 def row(gid, *, depth=1, seed=False, in_deg=0, out_deg=0, in_kzt=0.0, out_kzt=0.0, betweenness=0.0, seed_neighbors=0):
     return {"gid": gid, "depth": depth, "is_seed": seed, "in_deg": in_deg, "out_deg": out_deg, "in_kzt": in_kzt, "out_kzt": out_kzt, "in_tx": in_deg, "out_tx": out_deg, "pagerank": 0.0, "betweenness": betweenness, "pass_through": out_kzt / in_kzt if in_kzt else float("nan"), "is_frontier_cutoff": depth == 4 and out_deg == 0, "n_seed_neighbors": seed_neighbors, "component_id": 0, "seed_reach_count": 0}
 

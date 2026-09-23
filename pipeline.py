@@ -5,8 +5,8 @@ import json
 import math
 import os
 import shutil
-import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -69,6 +69,9 @@ def _is_integer_series(series: pd.Series) -> bool:
 def load(data_dir: Path) -> Dataset:
     if not data_dir.is_dir():
         raise ValidationError(f"Входная папка не найдена: {data_dir}")
+    formats = [ext for ext in ('parquet', 'csv') if all((data_dir / f'{name}.{ext}').exists() for name in REQUIRED)]
+    if len(formats) != 1:
+        raise ValidationError('Требуется один полный набор nodes/edges/transactions: parquet или CSV')
     nodes = _read_input(data_dir, "nodes")
     edges = _read_input(data_dir, "edges")
     transactions = _read_input(data_dir, "transactions")
@@ -129,7 +132,7 @@ def load(data_dir: Path) -> Dataset:
 
 def build_graph(nodes: pd.DataFrame, edges: pd.DataFrame) -> nx.DiGraph:
     graph = nx.DiGraph()
-    graph.add_nodes_from(int(gid) for gid in nodes.gid)
+    graph.add_nodes_from(sorted(int(gid) for gid in nodes.gid))
     for row in edges.sort_values(["src", "dst"]).itertuples(index=False):
         graph.add_edge(int(row.src), int(row.dst), sum_kzt=float(row.sum_kzt), n_tx=int(row.n_tx), depth=int(row.depth))
     return graph
@@ -241,14 +244,14 @@ def assign_roles(features: pd.DataFrame, th: dict) -> pd.DataFrame:
     for row in result.itertuples(index=False):
         isolated = row.in_deg == 0 and row.out_deg == 0
         alternatives: list[str] = []
-        if row.in_deg >= 3:
+        if row.in_deg >= th['consolidator_in_deg'] and row.in_kzt > 0:
             alternatives.append("consolidator")
-        if row.out_deg >= 10:
+        if row.out_deg >= th['distributor_out_deg']:
             alternatives.append("distributor")
-        if row.in_kzt > 0 and row.out_kzt > 0 and pd.notna(row.pass_through) and th["transit_low"] <= row.pass_through <= th["transit_high"]:
+        if not row.is_seed and not row.is_frontier_cutoff and row.in_kzt > 0 and row.out_kzt > 0 and pd.notna(row.pass_through) and th["transit_low"] <= row.pass_through <= th["transit_high"]:
             alternatives.append("transit")
         if isolated:
-            role, score, evidence = "peripheral", 0.20, "Наблюдаемых переводов нет; данных для роли недостаточно"
+            role, score, evidence = "peripheral", 0.20, "Наблюдаемых переводов нет; данных для роли недостаточно (0 входящих, 0 исходящих)"
         elif cutoff is not None and row.n_seed_neighbors >= th["coordinator_seed_neighbors"] and row.betweenness >= cutoff:
             role = "coordinator"
             score = min(1.0, 0.5 * min(row.n_seed_neighbors / 4, 1) + 0.5 * row.betweenness / cutoff)
@@ -279,6 +282,7 @@ def assign_roles(features: pd.DataFrame, th: dict) -> pd.DataFrame:
         caveat = "; исходящие за 4-м коленом не наблюдаются" if row.is_frontier_cutoff else ("; входящие seed могут быть неполными" if row.is_seed else "")
         if role == "peripheral" and isolated:
             caveat = ""
+        alternatives = [value for value in alternatives if value != role]
         full = f"{role}: {evidence}{caveat}." + (f" Альтернативные сигналы: {', '.join(alternatives)}." if alternatives else "")
         roles.append(role); scores.append(round(float(max(0.0, min(1.0, score))), 6)); evidences.append(full[:200]); explanations.append(full)
     result["role"] = roles; result["role_score"] = scores; result["evidence"] = evidences; result["explanation"] = explanations
@@ -328,7 +332,11 @@ def _validate_outputs(features: pd.DataFrame, clusters: pd.DataFrame, top: pd.Da
 
 
 def publish(features: pd.DataFrame, clusters: pd.DataFrame, dataset: Dataset, out_dir: Path, edges_export: Path, metadata: dict) -> None:
-    temp = Path(tempfile.mkdtemp(prefix="money-graph-", dir=str(out_dir.parent)))
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    # mkdtemp applies an owner-only ACL on Windows. Renaming its child to out
+    # would keep that ACL and prevent the interactive user from reading it.
+    temp = out_dir.parent / ('money-graph-' + uuid.uuid4().hex)
+    temp.mkdir()
     try:
         temp_out = temp / "out"
         temp_out.mkdir()
@@ -346,11 +354,31 @@ def publish(features: pd.DataFrame, clusters: pd.DataFrame, dataset: Dataset, ou
         metadata["status"] = "success"
         (temp_out / "run_metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
         _validate_outputs(features, cluster_output, top, dataset.nodes)
-        if out_dir.exists():
-            shutil.rmtree(out_dir)
-        temp_out.rename(out_dir)
         edges_export.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(edges_export_temp, edges_export)
+        backup = temp / 'previous-out'
+        previous_edges = temp / 'previous-edges.csv'
+        lock = out_dir.parent / ('.' + out_dir.name + '.publishing')
+        lock.write_text('updating', encoding='utf-8')
+        had_out, had_edges = out_dir.exists(), edges_export.exists()
+        published = False
+        try:
+            if had_edges:
+                shutil.copy2(edges_export, previous_edges)
+            if had_out:
+                out_dir.rename(backup)
+            temp_out.rename(out_dir)
+            published = True
+            os.replace(edges_export_temp, edges_export)
+        except BaseException:
+            if published:
+                out_dir.rename(temp / 'failed-out')
+            if backup.exists():
+                backup.rename(out_dir)
+            if previous_edges.exists():
+                shutil.copy2(previous_edges, edges_export)
+            raise
+        finally:
+            lock.unlink(missing_ok=True)
     finally:
         if temp.exists():
             shutil.rmtree(temp, ignore_errors=True)
@@ -373,6 +401,8 @@ def run(data_dir: Path, out_dir: Path, edges_export: Path) -> dict:
         "pipeline_seconds": round(elapsed, 3), "thresholds": th, "method": {"betweenness": "exact directed unweighted Brandes", "communities": "Louvain on undirected projection with reverse weights summed", "priority": "0.40 role + 0.25 log incoming volume + 0.20 bridge + 0.15 seed neighbors", "float_tolerance": "atol=0.01 KZT, rtol=1e-12"}, "warnings": dataset.warnings, "role_counts": role_counts,
     }
     publish(features, clusters, dataset, out_dir, edges_export, metadata)
+    metadata['pipeline_seconds'] = round(time.perf_counter() - started, 3)
+    (out_dir / 'run_metadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
     print(json.dumps(metadata, ensure_ascii=False, indent=2))
     return metadata
 

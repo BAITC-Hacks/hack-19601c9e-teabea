@@ -1,23 +1,42 @@
+﻿"""Recalculate from parquet, then serve the local Streamlit interface."""
+import argparse
 import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent
-PYTHON = sys.executable
 
 
-def main() -> None:
-    subprocess.run([PYTHON, "-m", "backend.app.pipeline", "--data", "data", "--out", "out"], cwd=ROOT, check=True)
-    dist = ROOT / "frontend" / "dist"
-    if not dist.exists():
-        raise SystemExit("frontend/dist отсутствует. Выполните: cd frontend; npm ci; npm run build")
-    print("Открывайте http://127.0.0.1:8000")
+def wait_for(command):
+    child = subprocess.Popen(command, cwd=ROOT)
     try:
-        subprocess.run([PYTHON, "-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", "8000"], cwd=ROOT, check=True)
+        return child.wait()
     except KeyboardInterrupt:
-        print("Сервер остановлен.")
+        child.terminate()
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+        return 130
 
 
-if __name__ == "__main__":
-    main()
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--data', type=Path, default=ROOT / 'data_parquet')
+    parser.add_argument('--out', type=Path, default=ROOT / 'out')
+    parser.add_argument('--edges-export', type=Path, default=ROOT / 'data/edges.csv')
+    args = parser.parse_args()
+    data, out, edges = (str(p.resolve()) for p in (args.data, args.out, args.edges_export))
+    code = wait_for([sys.executable, str(ROOT / 'pipeline.py'), '--data', data,
+                     '--out', out, '--edges-export', edges])
+    if code:
+        return code
+    print('http://127.0.0.1:8501', flush=True)
+    return wait_for([sys.executable, '-m', 'streamlit', 'run', str(ROOT / 'app.py'),
+                     '--server.address', '127.0.0.1', '--server.port', '8501',
+                     '--', '--data', out, '--edges', edges])
+
+
+if __name__ == '__main__':
+    sys.exit(main())

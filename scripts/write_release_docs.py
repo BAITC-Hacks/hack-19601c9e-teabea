@@ -1,4 +1,22 @@
-# Граф денег
+"""Write documentation examples from the verified current snapshot."""
+import json
+from pathlib import Path
+from html import escape
+
+ROOT = Path(__file__).resolve().parents[1]
+report = json.loads((ROOT/'docs/verification.json').read_text(encoding='utf-8'))
+meta = json.loads((ROOT/'out/run_metadata.json').read_text(encoding='utf-8'))
+examples = report['examples']
+diagram = '''```mermaid
+flowchart LR
+  A[Три parquet] --> B[Валидация схем и агрегатов]
+  B --> C[Направленный граф и признаки]
+  C --> D[Louvain и шесть ролей]
+  D --> E[Приоритет и объяснения]
+  E --> F[CSV и metadata]
+  F --> G[Streamlit и PyVis]
+```'''
+readme = r'''# Граф денег
 
 Локальный инструмент для аналитика: читает наблюдаемую сеть переводов, рассчитывает структурные роли, сообщества и приоритет проверки, показывает связи и численные объяснения. Роли — гипотезы без размеченной истины; score не означает вероятность виновности.
 
@@ -75,7 +93,7 @@ priority = 0.40 × weight(role) × role_score
 
 ## Фактическая проверка
 
-Исходные parquet: 2248 узлов, 3119 рёбер, 4840 транзакций; 81 seed, 91 кластер, 19 изолятов, 444 boundary. Период 2026-07-01 — 2026-07-31. CLI wall time: **3.399 / 3.329 с**; три обязательных CSV побайтно воспроизводимы. Распределение: terminal: 1071, peripheral: 1026, transit: 67, consolidator: 51, distributor: 26, coordinator: 7.
+REPORT_PLACEHOLDER
 
 Проверено 15 тестов; `pip check` не нашёл конфликтов. Выполнен реальный `run.py`, Streamlit AppTest и проверка HTML. **Визуальный браузерный прогон, экран 1280×720, скачивания в браузере, сетевой offline-тест и физический Ctrl+C не проверены**: браузеры недоступны инструментам сессии. Подробности и точные границы проверки — [verification.md](docs/verification.md), машинный отчёт — [verification.json](docs/verification.json).
 
@@ -88,15 +106,7 @@ priority = 0.40 × weight(role) × role_score
 
 ## Архитектура и демо
 
-```mermaid
-flowchart LR
-  A[Три parquet] --> B[Валидация схем и агрегатов]
-  B --> C[Направленный граф и признаки]
-  C --> D[Louvain и шесть ролей]
-  D --> E[Приоритет и объяснения]
-  E --> F[CSV и metadata]
-  F --> G[Streamlit и PyVis]
-```
+DIAGRAM_PLACEHOLDER
 
 [Схема решения](docs/architecture.md), [SVG для одного слайда](docs/architecture.svg), [пятиминутное демо](docs/demo.md). Архив создаётся в `dist/money-graph-submission.zip`; данные включены только для предусмотренной передачи организаторам хакатона. Не публикуйте архив и данные в открытом доступе.
 
@@ -111,3 +121,45 @@ flowchart LR
 В рабочем репозитории `backend/` и `frontend/` — прежний вариант API/React, не участвующий в новом запуске и не включённый в архив. Их исторические проверки не засчитываются в текущий протокол. Исходный `_kit/` сохранён отдельно.
 
 `_kit/money-graph-final-kit/pqmini` — ограниченный Linux fallback из исходного комплекта, с жёсткой зависимостью от libzstd. Он не используется основным CLI, не проверялся здесь и не включён в архив. Поддержка произвольного parquet им не заявляется.
+'''
+counts = ', '.join(f'{k}: {v}' for k,v in report['role_counts'].items())
+summary = f"Исходные parquet: {report['input_rows']['nodes']} узлов, {report['input_rows']['edges']} рёбер, {report['input_rows']['transactions']} транзакций; {meta['seed_count']} seed, {report['clusters']} кластер, {report['isolates']} изолятов, {report['boundary']} boundary. Период {meta['period_from']} — {meta['period_to']}. CLI wall time: **{' / '.join(map(str, report['cli_wall_seconds']))} с**; три обязательных CSV побайтно воспроизводимы. Распределение: {counts}."
+(ROOT/'README.md').write_text(readme.replace('REPORT_PLACEHOLDER',summary).replace('DIAGRAM_PLACEHOLDER',diagram), encoding='utf-8')
+(ROOT/'docs/architecture.md').write_text('# Архитектура\n\n'+diagram+'''
+
+`run.py` последовательно вызывает `pipeline.py` и Streamlit через `sys.executable`, передаёт абсолютные пути и не запускает UI при ошибке расчёта. API/Node-сервер не нужен.
+
+Валидация проверяет весь набор входов, int64 идентификаторы, ссылки, суммы и количества. Граф содержит все узлы до расчёта метрик. Louvain работает по неориентированной проекции с суммой встречных весов; роли и приоритет считаются по направленным признакам.
+
+Результаты готовятся во временном каталоге, проверяются и публикуются с резервным комплектом для отката. Маркер публикации останавливает загрузку UI во время замены файлов. Это локальный последовательный запуск, а не многопользовательская транзакционная БД; одновременные пересчёты в один out не поддерживаются.
+
+Интерфейс читает CSV, не пересчитывает роли; gid передаётся в PyVis строками. Inline vis исключает CDN-скрипты; визуальная и сетевая проверка браузером остаются открытыми.
+
+[SVG 1600×900 для слайда](architecture.svg). [Протокол проверки](verification.md).
+''', encoding='utf-8')
+demo = f'''# Демо — 5 минут
+
+Примеры ниже выбраны программно из текущего результата скриптом `scripts/verify_release.py`. Это сценарий живого показа, не запись выполненного браузерного демо. Перед показом пройти оставшийся чек-лист из `verification.md`.
+
+| Время | Действие и объяснение |
+|---|---|
+| 0:00–0:30 | Аналитику нужно быстро выбрать узлы для проверки и объяснить решение. Здесь роли — структурные гипотезы, без утверждения виновности. |
+| 0:30–1:15 | Запустить `.venv\\Scripts\\python.exe run.py`. Показать пересчёт из трёх parquet и http://127.0.0.1:8501. Измеренные CLI-прогоны: {report['cli_wall_seconds'][0]} и {report['cli_wall_seconds'][1]} с; на другой машине время изменится. |
+| 1:15–2:15 | «Глобальный топ-20» → первый узел `{examples['first_top']}` → «Показать на графе» → «Сеть и карточка». Разобрать seed-соседей, betweenness и четыре численных вклада. Это гипотеза координации по двум сигналам. |
+| 2:15–3:00 | Найти консолидацию `{examples['consolidator']}`. Сравнить входящий веер, роль и приоритет с предыдущим узлом. Альтернатива: транзит `{examples['transit']}`; отношение месячных сумм не доказывает движение тех же средств. |
+| 3:00–3:40 | Ввести произвольный gid жюри; запасной пример `{examples['arbitrary']}`. Затем изолят `{examples['isolate']}`: одна точка, 0 связей, peripheral, pass-through «н/д». Неизвестный gid даёт явное сообщение. |
+| 3:40–4:20 | Найти boundary `{examples['boundary']}`. Показать depth=4 и предупреждение; отсутствие выхода не означает удержание. У seed вход неполон, переводы ниже порога не видны. |
+| 4:20–5:00 | Показать «Кластеры», перейти к выбранному кластеру; скачать три полных CSV. Открыть architecture.svg. Для миллиона узлов: компактный граф, приближённая центральность, колоночные агрегаты и подграфы в UI. |
+
+В «Вся сеть» доступны все узлы без скрытого сэмплирования. Смена фильтров сохраняет режим, пустые роли показывают пустой результат. Подсказка графа доступна наведением; выбор карточки делается поиском/топом. Завершить консоль Ctrl+C и проверить освобождение порта.
+'''
+(ROOT/'docs/demo.md').write_text(demo, encoding='utf-8')
+blocks = [('01','PARQUET','nodes · edges · transactions'),('02','ВАЛИДАЦИЯ','Схемы · ссылки · суммы · n_tx'),('03','ГРАФ И ПРИЗНАКИ','Направления · все узлы · метрики'),('04','LOUVAIN И РОЛИ','Сообщества · 6 гипотез'),('05','ПРИОРИТЕТ И CSV','Четыре вклада · объяснения'),('06','STREAMLIT / PYVIS','Поиск · связи · карточка · экспорт')]
+svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="#101827"/><g font-family="Arial, sans-serif"><text x="80" y="105" fill="white" font-size="48">Граф денег</text><text x="80" y="158" fill="#a8b8ce" font-size="26">От наблюдаемых переводов к объяснимому приоритету проверки</text>']
+for i,(num,title,subtitle) in enumerate(blocks):
+    x=80+(i%3)*510; y=235+(i//3)*250
+    svg.append(f'<rect x="{x}" y="{y}" width="450" height="180" rx="16" fill="#1e2c41" stroke="#59d5bd"/><text x="{x+25}" y="{y+42}" fill="#59d5bd" font-size="23">{num}</text><text x="{x+25}" y="{y+91}" fill="white" font-size="27">{escape(title)}</text><text x="{x+25}" y="{y+139}" fill="#c0ccdd" font-size="21">{escape(subtitle)}</text>')
+    if i%3<2:
+        svg.append(f'<path d="M {x+457} {y+90} h 40 m -12 -9 l 12 9 -12 9" fill="none" stroke="#59d5bd" stroke-width="3"/>')
+svg.append('<path d="M 1500 415 V 445 H 55 V 575 H 73 m -12 -9 l 12 9 -12 9" fill="none" stroke="#59d5bd" stroke-width="3"/><text x="80" y="765" fill="#59d5bd" font-size="25">Один запуск: python run.py   •   Локально: 127.0.0.1:8501</text><text x="80" y="822" fill="#a8b8ce" font-size="23">Роли — гипотезы. Depth=4 — граница наблюдения. Входящие seed неполны.</text></g></svg>')
+(ROOT/'docs/architecture.svg').write_text(''.join(svg), encoding='utf-8')

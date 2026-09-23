@@ -8,7 +8,7 @@
   "seed_count": 81,
   "period_from": "2026-07-01",
   "period_to": "2026-07-31",
-  "pipeline_seconds": 4.296,
+  "pipeline_seconds": 2.697,
   "thresholds": {
     "consolidator_in_deg": 5,
     "distributor_out_deg": 15,
