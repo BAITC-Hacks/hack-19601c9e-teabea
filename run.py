@@ -1,42 +1,61 @@
-﻿"""Recalculate from parquet, then serve the local Streamlit interface."""
 import argparse
+import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
+
 ROOT = Path(__file__).resolve().parent
+PYTHON = sys.executable
 
 
-def wait_for(command):
-    child = subprocess.Popen(command, cwd=ROOT)
-    try:
-        return child.wait()
-    except KeyboardInterrupt:
-        child.terminate()
-        try:
-            child.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            child.wait()
-        return 130
+def interrupted(signum, frame):
+    raise KeyboardInterrupt
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--data', type=Path, default=ROOT / 'data_parquet')
-    parser.add_argument('--out', type=Path, default=ROOT / 'out')
-    parser.add_argument('--edges-export', type=Path, default=ROOT / 'data/edges.csv')
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Пересчёт parquet и запуск Streamlit")
+    parser.add_argument("--data", type=Path, default=ROOT / "data_parquet")
+    parser.add_argument("--out", type=Path, default=ROOT / "out")
+    parser.add_argument("--edges", type=Path, default=ROOT / "data/edges.csv")
+    parser.add_argument("--port", type=int, default=8501)
     args = parser.parse_args()
-    data, out, edges = (str(p.resolve()) for p in (args.data, args.out, args.edges_export))
-    code = wait_for([sys.executable, str(ROOT / 'pipeline.py'), '--data', data,
-                     '--out', out, '--edges-export', edges])
-    if code:
-        return code
-    print('http://127.0.0.1:8501', flush=True)
-    return wait_for([sys.executable, '-m', 'streamlit', 'run', str(ROOT / 'app.py'),
-                     '--server.address', '127.0.0.1', '--server.port', '8501',
-                     '--', '--data', out, '--edges', edges])
+    if os.name == "nt":
+        signal.signal(signal.SIGBREAK, interrupted)
+    data, out, edges = (path.resolve() for path in (args.data, args.out, args.edges))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    child = None
+    try:
+        for command in ([PYTHON, str(ROOT / "pipeline.py"), "--data", str(data), "--out", str(out), "--edges-export", str(edges)],
+                        [PYTHON, "-m", "streamlit", "run", str(ROOT / "app.py"), "--server.address", "127.0.0.1", "--server.port", str(args.port), "--server.headless", "true", "--browser.gatherUsageStats", "false", "--", "--data", str(out), "--edges", str(edges)]):
+            child = subprocess.Popen(command, cwd=ROOT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+            while True:
+                try:
+                    # Short waits let Windows deliver console signals to Python.
+                    code = child.wait(timeout=0.25)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            if code:
+                raise SystemExit(code)
+    except KeyboardInterrupt:
+        print("Сервер остановлен.")
+    finally:
+        if child is not None and child.poll() is None:
+            if os.name == "nt":
+                child.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                child.terminate()
+            try:
+                child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(child.pid), "/T", "/F"], check=False, capture_output=True)
+                else:
+                    child.kill()
+                child.wait()
 
 
-if __name__ == '__main__':
-    sys.exit(main())
+if __name__ == "__main__":
+    main()

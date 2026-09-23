@@ -1,6 +1,7 @@
 .venv/
+.venv-ui/
 __pycache__/
 .pytest_cache/
-.verification/
-dist/
-*.pyc
+verification/
+release/
+.user_runs/

@@ -1,34 +1,16 @@
 {
-  "python": "3.12.14",
-  "platform": "Windows-11-10.0.26200-SP0",
-  "versions": {
-    "pandas": "3.0.6",
-    "numpy": "2.5.3",
-    "networkx": "3.7",
-    "scipy": "1.17.1",
-    "pyarrow": "25.0.1",
-    "streamlit": "1.64.0",
-    "pyvis": "0.3.2",
-    "pytest": "9.1.1"
-  },
-  "cli_wall_seconds": [
-    3.399,
-    3.329
+  "python": "3.12.10",
+  "wall_seconds": [
+    10.007,
+    8.891
   ],
-  "hashes": {
-    "nodes_roles.csv": "15638623d0fd7f45f854b9af9b60cc7509271a8e417c8cc4b1e3f98207ce4af4",
-    "clusters.csv": "618e6633f4ebd579717edab2e4c9472aa82ac15ca85c8b1a4c58378549730ecc",
-    "top_nodes.csv": "c89a9feb85a9286de24923e96da07ac23a0fc377cc45882fdcb90c7a8f79aef5"
-  },
-  "input_rows": {
+  "parquet_rows": {
     "nodes": 2248,
     "edges": 3119,
     "transactions": 4840
   },
   "clusters": 91,
-  "isolates": 19,
-  "boundary": 444,
-  "role_counts": {
+  "roles": {
     "terminal": 1071,
     "peripheral": 1026,
     "transit": 67,
@@ -37,7 +19,7 @@
     "coordinator": 7
   },
   "examples": {
-    "first_top": "100000005910114100",
+    "top": "100000005910114100",
     "arbitrary": "100000004261340100",
     "isolate": "100000000456947100",
     "boundary": "100000000018102100",
@@ -48,6 +30,48 @@
     "terminal": "100000006972210100",
     "transit": "100000004707703100"
   },
-  "standard_reader_comparison": "all three parquet via pyarrow; no pqmini execution",
-  "browser": "Unavailable in this session; no visual/network/download verification claimed"
+  "csv_sha256": {
+    "nodes_roles.csv": "078db2be9dab947c246f611e4e67f9a891c9ec63e27b5f5693bbc88ece712795",
+    "clusters.csv": "618e6633f4ebd579717edab2e4c9472aa82ac15ca85c8b1a4c58378549730ecc",
+    "top_nodes.csv": "e5f5ad38f7bcd3ba9766d6624fcfc39245693900347f8359e6fe1b8a33328bd3"
+  },
+  "metadata": {
+    "status": "success",
+    "input_rows": {
+      "nodes": 2248,
+      "edges": 3119,
+      "transactions": 4840
+    },
+    "seed_count": 81,
+    "period_from": "2026-07-01",
+    "period_to": "2026-07-31",
+    "pipeline_seconds": 7.181,
+    "thresholds": {
+      "consolidator_in_deg": 5,
+      "distributor_out_deg": 15,
+      "coordinator_betweenness_p95": 0.0013361804007553844,
+      "coordinator_seed_neighbors": 2,
+      "transit_low": 0.8,
+      "transit_high": 1.2,
+      "money_tolerance_atol": 0.01,
+      "money_tolerance_rtol": 1e-12
+    },
+    "method": {
+      "betweenness": "exact directed unweighted Brandes",
+      "communities": "Louvain on undirected projection with reverse weights summed",
+      "priority": "0.40 role + 0.25 log incoming volume + 0.20 bridge + 0.15 seed neighbors",
+      "float_tolerance": "atol=0.01 KZT, rtol=1e-12"
+    },
+    "warnings": [
+      "Часть seed не имеет ребер в наблюдаемой выборке"
+    ],
+    "role_counts": {
+      "consolidator": 51,
+      "transit": 67,
+      "distributor": 26,
+      "terminal": 1071,
+      "coordinator": 7,
+      "peripheral": 1026
+    }
+  }
 }

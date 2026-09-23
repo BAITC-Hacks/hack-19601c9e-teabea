@@ -66,7 +66,7 @@ def _is_integer_series(series: pd.Series) -> bool:
     return pd.api.types.is_integer_dtype(series.dtype) and not pd.api.types.is_bool_dtype(series.dtype)
 
 
-def load(data_dir: Path) -> Dataset:
+def load(data_dir: Path, max_depth: int | None = 4) -> Dataset:
     if not data_dir.is_dir():
         raise ValidationError(f"Входная папка не найдена: {data_dir}")
     formats = [ext for ext in ('parquet', 'csv') if all((data_dir / f'{name}.{ext}').exists() for name in REQUIRED)]
@@ -97,8 +97,10 @@ def load(data_dir: Path) -> Dataset:
         raise ValidationError("nodes.gid должен быть непустым и уникальным")
     if edges[["src", "dst"]].isna().any().any() or edges.duplicated(["src", "dst"]).any():
         raise ValidationError("edges.src/dst не должны быть пустыми; пары должны быть уникальными")
-    if not nodes.depth.between(0, 4).all() or not edges.depth.between(1, 4).all():
-        raise ValidationError("depth должен быть 0..4 в nodes и 1..4 в edges")
+    if (nodes.depth < 0).any() or (edges.depth < 1).any():
+        raise ValidationError("depth должен быть >=0 в nodes и >=1 в edges")
+    if max_depth is not None and ((nodes.depth > max_depth).any() or (edges.depth > max_depth).any()):
+        raise ValidationError(f"depth превышает указанную границу {max_depth}")
     node_ids = set(nodes.gid.astype("int64"))
     if not set(edges.src).issubset(node_ids) or not set(edges.dst).issubset(node_ids):
         raise ValidationError("edges ссылается на отсутствующий gid")
@@ -151,16 +153,16 @@ def _components(graph: nx.DiGraph) -> dict[int, int]:
     return {gid: component_id for component_id, values in enumerate(groups) for gid in values}
 
 
-def _seed_reach(graph: nx.DiGraph, seeds: Iterable[int]) -> dict[int, set[int]]:
+def _seed_reach(graph: nx.DiGraph, seeds: Iterable[int], max_depth: int | None = 4) -> dict[int, set[int]]:
     reached: dict[int, set[int]] = {}
     for seed in sorted(seeds):
-        for node, distance in nx.single_source_shortest_path_length(graph, seed, cutoff=4).items():
-            if 1 <= distance <= 4:
+        for node, distance in nx.single_source_shortest_path_length(graph, seed, cutoff=max_depth).items():
+            if distance >= 1:
                 reached.setdefault(node, set()).add(seed)
     return reached
 
 
-def compute_metrics(graph: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
+def compute_metrics(graph: nx.DiGraph, nodes: pd.DataFrame, max_depth: int | None = 4) -> pd.DataFrame:
     in_deg = dict(graph.in_degree())
     out_deg = dict(graph.out_degree())
     in_kzt = dict(graph.in_degree(weight="sum_kzt"))
@@ -171,7 +173,7 @@ def compute_metrics(graph: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
     betweenness = nx.betweenness_centrality(graph, weight=None, normalized=True) if graph.number_of_edges() else {node: 0.0 for node in graph}
     component_id = _components(graph)
     seeds = set(nodes.loc[nodes.is_seed, "gid"].astype("int64"))
-    reach = _seed_reach(graph, seeds)
+    reach = _seed_reach(graph, seeds, max_depth)
     rows = []
     for row in nodes.sort_values("gid").itertuples(index=False):
         gid = int(row.gid)
@@ -184,7 +186,7 @@ def compute_metrics(graph: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
             "in_kzt": incoming, "out_kzt": outgoing, "in_tx": int(in_tx.get(gid, 0)), "out_tx": int(out_tx.get(gid, 0)),
             "pagerank": float(pagerank.get(gid, 0.0)), "betweenness": float(betweenness.get(gid, 0.0)),
             "pass_through": outgoing / incoming if incoming > 0 else np.nan,
-            "is_frontier_cutoff": bool(int(row.depth) == 4 and out_deg.get(gid, 0) == 0),
+            "is_frontier_cutoff": bool(max_depth is not None and int(row.depth) == max_depth and out_deg.get(gid, 0) == 0),
             "n_seed_neighbors": len(neighbors & seeds), "component_id": int(component_id[gid]),
             "seed_reach_count": len(reach.get(gid, set())),
         })
@@ -262,8 +264,8 @@ def assign_roles(features: pd.DataFrame, th: dict) -> pd.DataFrame:
             evidence = f"получает от {row.in_deg} плательщиков, вход {row.in_kzt:,.0f} KZT"
             if row.is_frontier_cutoff:
                 score = min(score, 0.65)
-                evidence += "; depth=4, исходящие не наблюдаются"
-            if row.is_seed:
+                evidence += f"; depth={row.depth}, исходящие не наблюдаются"
+            if row.is_seed and th.get("seed_incomplete", True):
                 evidence += "; входящие seed неполны"
         elif row.out_deg >= th["distributor_out_deg"]:
             role = "distributor"
@@ -273,13 +275,15 @@ def assign_roles(features: pd.DataFrame, th: dict) -> pd.DataFrame:
             role = "transit"
             score = min(1.0, 1.0 - abs(row.pass_through - 1.0) / 0.4)
             evidence = f"положительные вход/выход; pass-through={row.pass_through:.2f}, это месячное соответствие потоков"
-        elif not row.is_seed and row.depth < 4 and row.in_kzt > 0 and row.out_deg == 0:
+        elif not row.is_seed and th.get("max_depth", 4) is not None and row.depth < th.get("max_depth", 4) and row.in_kzt > 0 and row.out_deg == 0:
             role, score = "terminal", min(1.0, 0.55 + 0.45 * min(row.in_kzt / max(features.in_kzt.max(), 1), 1)),
             evidence = f"положительный вход {row.in_kzt:,.0f} KZT, исходящих нет; возможный конечный получатель в выборке"
         else:
             role, score = "peripheral", 0.15
             evidence = f"{row.in_deg} входящих и {row.out_deg} исходящих контрагентов; недостаточно выраженных признаков"
-        caveat = "; исходящие за 4-м коленом не наблюдаются" if row.is_frontier_cutoff else ("; входящие seed могут быть неполными" if row.is_seed else "")
+        caveat = f"; исходящие за {row.depth}-м коленом не наблюдаются" if row.is_frontier_cutoff else ("; входящие seed могут быть неполными" if row.is_seed and th.get("seed_incomplete", True) else "")
+        if th.get("max_depth", 4) is None:
+            caveat += "; граница наблюдения неизвестна, terminal не назначается"
         if role == "peripheral" and isolated:
             caveat = ""
         alternatives = [value for value in alternatives if value != role]
@@ -384,18 +388,23 @@ def publish(features: pd.DataFrame, clusters: pd.DataFrame, dataset: Dataset, ou
             shutil.rmtree(temp, ignore_errors=True)
 
 
-def run(data_dir: Path, out_dir: Path, edges_export: Path) -> dict:
+def run(data_dir: Path, out_dir: Path, edges_export: Path, observation: dict | None = None) -> dict:
     started = time.perf_counter()
-    dataset = load(data_dir)
+    observation = observation if observation is not None else dict(source="hackathon", max_depth=4, seed_incomplete=True, minimum_amount=5000, bank_scope="Только внутрибанковские", notes="Нет ground truth")
+    max_depth = observation.get("max_depth")
+    dataset = load(data_dir, max_depth=max_depth)
     graph = build_graph(dataset.nodes, dataset.edges)
-    features = compute_metrics(graph, dataset.nodes)
+    features = compute_metrics(graph, dataset.nodes, max_depth=max_depth)
     features, clusters = cluster_membership(graph, features)
     th = thresholds(features)
+    if observation.get("source") != "hackathon":
+        th.update(max_depth=max_depth, seed_incomplete=observation.get("seed_incomplete") is not False)
     features = assign_roles(features, th)
     features = prioritize(features)
     elapsed = time.perf_counter() - started
     role_counts = {role: int((features.role == role).sum()) for role in ROLES}
     metadata = {
+        "observation": observation,
         "status": "pending", "input_rows": {"nodes": len(dataset.nodes), "edges": len(dataset.edges), "transactions": len(dataset.transactions)},
         "seed_count": int(dataset.nodes.is_seed.sum()), "period_from": dataset.transactions.date.min().strftime("%Y-%m-%d"), "period_to": dataset.transactions.date.max().strftime("%Y-%m-%d"),
         "pipeline_seconds": round(elapsed, 3), "thresholds": th, "method": {"betweenness": "exact directed unweighted Brandes", "communities": "Louvain on undirected projection with reverse weights summed", "priority": "0.40 role + 0.25 log incoming volume + 0.20 bridge + 0.15 seed neighbors", "float_tolerance": "atol=0.01 KZT, rtol=1e-12"}, "warnings": dataset.warnings, "role_counts": role_counts,
