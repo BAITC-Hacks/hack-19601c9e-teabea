@@ -18,12 +18,16 @@ SCHEMAS = {
 
 
 def signature(out, edges):
+    if (out.parent / ('.' + out.name + '.publishing')).exists():
+        raise ValueError('Публикуются новые результаты; обновите страницу после завершения расчёта')
     paths = [out / name for name in SCHEMAS] + [out / "run_metadata.json", edges]
     return hashlib.sha256(b"".join(str(p).encode() + p.read_bytes() for p in paths)).hexdigest()
 
 
 def load_results(out, edges_path):
     out = Path(out)
+    if (out.parent / ('.' + out.name + '.publishing')).exists():
+        raise ValueError('Публикуются новые результаты; обновите страницу после завершения расчёта')
     frames = {}
     for name, columns in SCHEMAS.items():
         frame = pd.read_csv(out / name, dtype={"gid": "string", "top_gids": "string"})

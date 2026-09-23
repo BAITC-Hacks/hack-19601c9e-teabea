@@ -18,7 +18,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Пересчёт parquet и запуск Streamlit")
     parser.add_argument("--data", type=Path, default=ROOT / "data_parquet")
     parser.add_argument("--out", type=Path, default=ROOT / "out")
-    parser.add_argument("--edges", type=Path, default=ROOT / "data/edges.csv")
+    parser.add_argument("--edges", "--edges-export", type=Path, default=ROOT / "data/edges.csv")
     parser.add_argument("--port", type=int, default=8501)
     args = parser.parse_args()
     if os.name == "nt":

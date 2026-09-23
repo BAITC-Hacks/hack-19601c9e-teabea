@@ -5,3 +5,6 @@ __pycache__/
 verification/
 release/
 .user_runs/
+.verification/
+dist/
+*.pyc
