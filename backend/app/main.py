@@ -1,13 +1,27 @@
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "out"
 app = FastAPI(title="Money Graph API", version="1.0")
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+    error = detail.get("error", detail)
+    return JSONResponse(status_code=exc.status_code, content={"error": {"code": error.get("code", "HTTP_ERROR"), "message": error.get("message", "Ошибка запроса")}})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"error": {"code": "INVALID_REQUEST", "message": "Некорректные параметры запроса"}})
 
 
 def snapshot() -> dict:
@@ -83,3 +97,8 @@ def exports(filename: str):
     path = OUT / filename
     if not path.exists(): raise HTTPException(503, detail={"error": {"code": "DATA_NOT_READY", "message": "Расчёт ещё не опубликован"}})
     return FileResponse(path, media_type="text/csv; charset=utf-8", filename=filename)
+
+
+FRONTEND_DIST = ROOT / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
