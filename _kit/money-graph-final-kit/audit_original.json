@@ -1,0 +1,36 @@
+{
+  "counts": {
+    "nodes": 2248,
+    "edges": 3119,
+    "transactions": 4840,
+    "roles": 2248,
+    "clusters": 89,
+    "top": 40
+  },
+  "coverage_exact": true,
+  "unique_output_gids": true,
+  "edge_pairs_match_transactions": true,
+  "aggregate_mismatches": 0,
+  "missing_endpoints": 0,
+  "roles": {
+    "distributor": 20,
+    "terminal": 1092,
+    "peripheral": 964,
+    "consolidator": 29,
+    "coordinator": 78,
+    "transit": 65
+  },
+  "isolated_roles": {
+    "terminal": 19
+  },
+  "seed_terminal": 30,
+  "boundary_roles": {
+    "peripheral": 444
+  },
+  "coordinator_no_betweenness": 12,
+  "evidence_max": 106,
+  "bad_scores": 0,
+  "cluster_nodes_total": 2248,
+  "top_sorted": true,
+  "original_parquet_hashes_match": true
+}

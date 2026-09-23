@@ -1,0 +1,15 @@
+# Обязательно для pipeline.py
+pandas>=2.0
+numpy>=1.24
+networkx>=3.2        # nx.community.louvain_communities нативен с 3.2+
+
+# Для чтения исходных .parquet (если не используете convert.py):
+pyarrow>=14.0         # или fastparquet>=2023.10.0
+
+# Для экрана просмотра (app.py)
+streamlit>=1.30
+pyvis>=0.3
+
+# convert.py (pqmini/) зависимостей не требует вообще — чистый Python +
+# системная libzstd (уже есть в большинстве Linux-дистрибутивов).
+# Нужен только если pyarrow/fastparquet недоступны (нет сети/пакетов).
