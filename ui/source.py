@@ -42,10 +42,14 @@ def source_panel(default_out, default_edges):
         state.source_mode = 'Пример хакатона'
         reset_selection()
     with st.container(border=True):
-        st.radio('Источник данных', ['Пример хакатона', 'Свои данные'], key='source_mode', horizontal=True, disabled=busy, on_change=reset_selection)
-        st.button('Открыть пример хакатона', on_click=example, disabled=busy)
+        choice, action = st.columns([3, 2], vertical_alignment='bottom')
+        with choice:
+            st.radio('Источник данных', ['Пример хакатона', 'Свои данные'], key='source_mode', horizontal=True, disabled=busy, on_change=reset_selection)
+        with action:
+            st.button('Открыть пример хакатона', on_click=example, disabled=busy)
         if state.source_mode == 'Пример хакатона':
             return default_out, default_edges
+    with st.expander('Данные и расчёт', expanded=not bool(state.get('upload_result'))):
         st.caption('Три файла одного набора. Можно сочетать CSV и Parquet. Данные организаторов не изменяются. Предпросмотр: первые 20 строк.')
         files = []
         for name in ('nodes', 'edges', 'transactions'):

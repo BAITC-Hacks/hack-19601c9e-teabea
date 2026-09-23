@@ -39,6 +39,8 @@ def read_upload(name, filename, content):
         text = series.astype('string')
         if text.isna().any() or not text.str.fullmatch(r'0|[1-9][0-9]*').all():
             raise ValueError(f'{name}.{col}: нужны непустые неотрицательные целые без .0 и экспоненты')
+        if text.map(lambda value: int(value) > np.iinfo(np.int64).max).any():
+            raise ValueError(f'{name}.{col}: значение выходит за пределы int64')
         try:
             frame[col] = text.map(int).astype('int64')
         except (ValueError, OverflowError, TypeError):

@@ -3,7 +3,7 @@
 [data-testid="stVerticalBlock"]{gap:16px}
 [data-testid="stHorizontalBlock"]{gap:24px}
 [data-testid="stMetric"]{padding:16px;background:#19222c;border:1px solid #33404f;border-radius:16px;height:100%;min-width:0}
-[data-testid="stMetricValue"]{font-size:clamp(1.25rem,1.7vw,2rem);overflow-wrap:anywhere}
+[data-testid="stMetricValue"]{font-size:clamp(1.25rem,1.7vw,2rem);overflow-wrap:anywhere;white-space:normal}
 [data-testid="stMetricLabel"]{white-space:normal;min-height:32px}
 [data-testid="stVerticalBlockBorderWrapper"]>div{border-radius:16px}
 button,input,[data-baseweb="select"]>div{min-height:40px!important;border-radius:8px!important}

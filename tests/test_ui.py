@@ -15,6 +15,17 @@ OUT = ROOT / "verification/run1"
 EDGES = ROOT / "verification/edges1.csv"
 
 
+def test_running_server_recovers_stale_graph_import(monkeypatch):
+    from ui import graph
+    def old_renderer(nodes, edges, selected=None):
+        raise AssertionError('The old renderer must be reloaded before rendering')
+    monkeypatch.setattr(graph, 'render_graph_html', old_renderer)
+    monkeypatch.setattr(sys, 'argv', ['app.py', '--data', str(OUT), '--edges', str(EDGES)])
+    app = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=30).run()
+    assert not app.exception
+    assert len(app.get('iframe')) == 1
+
+
 @pytest.fixture
 def results():
     return load_results(OUT, EDGES)
