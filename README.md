@@ -1,2 +1,2 @@
 # hack-19601c9e-teabea
-Hackathon team repository for TEABEA
+Hackathon team repository for TEABEA test
