@@ -20,15 +20,18 @@ cd ..
 Полный запуск с пересчётом parquet и API/UI:
 
 ```powershell
+.venv\Scripts\python.exe pipeline.py --data data_parquet --out out
 .venv\Scripts\python.exe run.py
 ```
 
-Откройте http://127.0.0.1:8000. Для отдельного пересчёта: `python -m backend.app.pipeline --data data --out out`. Для API без запуска UI: `python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000`.
+Откройте http://127.0.0.1:8000. Основная команда backend: `.venv\Scripts\python.exe pipeline.py --data data_parquet --out out --edges-export data\edges.csv`.
 
-CSV находятся в `out/nodes_roles.csv`, `out/clusters.csv`, `out/top_nodes.csv`.
+CSV находятся в `out/nodes_roles.csv`, `out/clusters.csv`, `out/top_nodes.csv`, расширенные метрики — в `out/node_metrics_full.csv`, метаданные — в `out/run_metadata.json`.
 
 ## Фактически проверено
 
-Расчёт на предоставленных данных: 2 248 узлов, 3 119 рёбер, 4 840 транзакций, 91 кластер, 19 изолятов, 444 boundary-узла, около 3.4 секунды. Повторный запуск даёт побайтно одинаковые три CSV. Пройдены pytest, TypeScript/build, summary/nodes/node/graph/clusters/top, неизвестный gid, скачивание всех CSV и строковые gid.
+Расчёт от исходных parquet: 2 248 узлов, 3 119 рёбер, 4 840 транзакций, 91 кластер, 19 изолятов, 444 boundary-узла, 4.325 секунды. Повторный запуск дал побайтно одинаковые три обязательных CSV. Пройдены 9 backend-тестов и контрактная проверка выгрузок: gid-покрытие, scores 0–1, evidence 1–200, cluster sum, top sorting, priority breakdown и исправление изолятов.
+
+Координатор назначается только при одновременных `n_seed_neighbors >= 2` и betweenness не ниже 95-го перцентиля положительных значений. Изолят — всегда консервативная `peripheral`; `terminal` требует положительный наблюдаемый вход, `depth < 4`, не-seed и `out_deg == 0`. Приоритет: `0.40*role_support + 0.25*log_volume + 0.20*bridge + 0.15*seed_neighbors`.
 
 Критерии ролей, формула приоритета, ограничения и масштабирование до 1 млн узлов описаны в [backend/README.md](backend/README.md). Архитектура и сценарий демо: [docs/architecture.md](docs/architecture.md), [docs/demo.md](docs/demo.md).

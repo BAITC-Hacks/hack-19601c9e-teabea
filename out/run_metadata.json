@@ -1,0 +1,39 @@
+{
+  "status": "success",
+  "input_rows": {
+    "nodes": 2248,
+    "edges": 3119,
+    "transactions": 4840
+  },
+  "seed_count": 81,
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-31",
+  "pipeline_seconds": 4.296,
+  "thresholds": {
+    "consolidator_in_deg": 5,
+    "distributor_out_deg": 15,
+    "coordinator_betweenness_p95": 0.0013361804007553844,
+    "coordinator_seed_neighbors": 2,
+    "transit_low": 0.8,
+    "transit_high": 1.2,
+    "money_tolerance_atol": 0.01,
+    "money_tolerance_rtol": 1e-12
+  },
+  "method": {
+    "betweenness": "exact directed unweighted Brandes",
+    "communities": "Louvain on undirected projection with reverse weights summed",
+    "priority": "0.40 role + 0.25 log incoming volume + 0.20 bridge + 0.15 seed neighbors",
+    "float_tolerance": "atol=0.01 KZT, rtol=1e-12"
+  },
+  "warnings": [
+    "Часть seed не имеет ребер в наблюдаемой выборке"
+  ],
+  "role_counts": {
+    "consolidator": 51,
+    "transit": 67,
+    "distributor": 26,
+    "terminal": 1071,
+    "coordinator": 7,
+    "peripheral": 1026
+  }
+}
